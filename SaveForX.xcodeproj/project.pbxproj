@@ -1,0 +1,424 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		38576C39622E3AA9D26C7DF1 /* SaveForXShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 85A0A90A5F28302D83E633C7 /* SaveForXShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		68A7A1D519D466F946F9F0EB /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 188DACBA995EEF8DA45B197D /* ShareViewController.swift */; };
+		83FFBDA18249008D85853A32 /* DownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED765247779169D7452A0392 /* DownloadManager.swift */; };
+		AD73D022A2573966485C5EC7 /* SaveForXApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42EFDCF66E5AB879EDAFAE05 /* SaveForXApp.swift */; };
+		CD062903DFF1B452A05D98CD /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E60F0240ECF85992900E8111 /* ContentView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		7776F7E773B80B33DF587861 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 36EFF1B1E2AC4A6498B783E6 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F0DBB09429CB801C2D228821;
+			remoteInfo = SaveForXShare;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		71FAE0952EE265C910E089A8 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				38576C39622E3AA9D26C7DF1 /* SaveForXShare.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		188DACBA995EEF8DA45B197D /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		42C5AD0B40CA6C1CC33E8B9B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		42EFDCF66E5AB879EDAFAE05 /* SaveForXApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SaveForXApp.swift; sourceTree = "<group>"; };
+		85A0A90A5F28302D83E633C7 /* SaveForXShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SaveForXShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		B0D7E59658028AB0BE236BAA /* SaveForX.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SaveForX.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C6C83CD678C611FBBB46992A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		E60F0240ECF85992900E8111 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		ED765247779169D7452A0392 /* DownloadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadManager.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		0AD3A329FC42E32591CF6D6F /* SaveForX */ = {
+			isa = PBXGroup;
+			children = (
+				E60F0240ECF85992900E8111 /* ContentView.swift */,
+				ED765247779169D7452A0392 /* DownloadManager.swift */,
+				C6C83CD678C611FBBB46992A /* Info.plist */,
+				42EFDCF66E5AB879EDAFAE05 /* SaveForXApp.swift */,
+			);
+			path = SaveForX;
+			sourceTree = "<group>";
+		};
+		31687E96E2F389BE2957F99F = {
+			isa = PBXGroup;
+			children = (
+				0AD3A329FC42E32591CF6D6F /* SaveForX */,
+				D6812961AF595760A077C74E /* SaveForXShare */,
+				4AA222BC036EFE353F2B12BF /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		4AA222BC036EFE353F2B12BF /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				B0D7E59658028AB0BE236BAA /* SaveForX.app */,
+				85A0A90A5F28302D83E633C7 /* SaveForXShare.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		D6812961AF595760A077C74E /* SaveForXShare */ = {
+			isa = PBXGroup;
+			children = (
+				42C5AD0B40CA6C1CC33E8B9B /* Info.plist */,
+				188DACBA995EEF8DA45B197D /* ShareViewController.swift */,
+			);
+			path = SaveForXShare;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		905CBC9448DA864CD30DDD49 /* SaveForX */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 42BEFA54C8600C53E9272349 /* Build configuration list for PBXNativeTarget "SaveForX" */;
+			buildPhases = (
+				FAAFB6553F812751AD77B4ED /* Sources */,
+				71FAE0952EE265C910E089A8 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C080EE094DE329E26D00266D /* PBXTargetDependency */,
+			);
+			name = SaveForX;
+			packageProductDependencies = (
+			);
+			productName = SaveForX;
+			productReference = B0D7E59658028AB0BE236BAA /* SaveForX.app */;
+			productType = "com.apple.product-type.application";
+		};
+		F0DBB09429CB801C2D228821 /* SaveForXShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F19EA8C5137F6912A305508B /* Build configuration list for PBXNativeTarget "SaveForXShare" */;
+			buildPhases = (
+				FAED691C51DF649BF260A653 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SaveForXShare;
+			packageProductDependencies = (
+			);
+			productName = SaveForXShare;
+			productReference = 85A0A90A5F28302D83E633C7 /* SaveForXShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		36EFF1B1E2AC4A6498B783E6 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+			};
+			buildConfigurationList = 630E7C384950BE3081910DEE /* Build configuration list for PBXProject "SaveForX" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 31687E96E2F389BE2957F99F;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 4AA222BC036EFE353F2B12BF /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				905CBC9448DA864CD30DDD49 /* SaveForX */,
+				F0DBB09429CB801C2D228821 /* SaveForXShare */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		FAAFB6553F812751AD77B4ED /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CD062903DFF1B452A05D98CD /* ContentView.swift in Sources */,
+				83FFBDA18249008D85853A32 /* DownloadManager.swift in Sources */,
+				AD73D022A2573966485C5EC7 /* SaveForXApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FAED691C51DF649BF260A653 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				68A7A1D519D466F946F9F0EB /* ShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		C080EE094DE329E26D00266D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F0DBB09429CB801C2D228821 /* SaveForXShare */;
+			targetProxy = 7776F7E773B80B33DF587861 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		401F09A32158996DCE525803 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		49C7D85D746CC1E03EBCBAB4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = HJ7M4JPHB3;
+				INFOPLIST_FILE = SaveForX/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Save for X";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Save for X uses your local network when you connect it to a resolver running on your Mac.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Save for X does not use the microphone.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Save for X needs permission to save downloaded videos to your Photos library.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Save for X uses Photos to save downloaded videos.";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.saveforx.app;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		64D574085B1B4ABEB303FF7F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				DEVELOPMENT_TEAM = HJ7M4JPHB3;
+				INFOPLIST_FILE = SaveForXShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Save for X";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.saveforx.app.share;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		9472691414C8C2192679B82E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = HJ7M4JPHB3;
+				INFOPLIST_FILE = SaveForX/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Save for X";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Save for X uses your local network when you connect it to a resolver running on your Mac.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Save for X does not use the microphone.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Save for X needs permission to save downloaded videos to your Photos library.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Save for X uses Photos to save downloaded videos.";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.saveforx.app;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		B39CA0B307778771C58A595D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				DEVELOPMENT_TEAM = HJ7M4JPHB3;
+				INFOPLIST_FILE = SaveForXShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Save for X";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.saveforx.app.share;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		C16AF95491959BD8C76903DA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		42BEFA54C8600C53E9272349 /* Build configuration list for PBXNativeTarget "SaveForX" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9472691414C8C2192679B82E /* Debug */,
+				49C7D85D746CC1E03EBCBAB4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		630E7C384950BE3081910DEE /* Build configuration list for PBXProject "SaveForX" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C16AF95491959BD8C76903DA /* Debug */,
+				401F09A32158996DCE525803 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F19EA8C5137F6912A305508B /* Build configuration list for PBXNativeTarget "SaveForXShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				64D574085B1B4ABEB303FF7F /* Debug */,
+				B39CA0B307778771C58A595D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 36EFF1B1E2AC4A6498B783E6 /* Project object */;
+}

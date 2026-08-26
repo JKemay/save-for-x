@@ -1,0 +1,4 @@
+.derivedData/
+DerivedData/
+build/
+.DS_Store

@@ -1,0 +1,64 @@
+name: SaveForX
+options:
+  bundleIdPrefix: com.saveforx
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+
+settings:
+  base:
+    SWIFT_VERSION: 5.0
+    TARGETED_DEVICE_FAMILY: "1,2"
+
+targets:
+  SaveForX:
+    type: application
+    platform: iOS
+    sources:
+      - path: SaveForX
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.saveforx.app
+        INFOPLIST_KEY_CFBundleDisplayName: Save for X
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Save for X does not use the microphone.
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: Save for X needs permission to save downloaded videos to your Photos library.
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: Save for X uses Photos to save downloaded videos.
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: Save for X uses your local network when you connect it to a resolver running on your Mac.
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: true
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+    info:
+      path: SaveForX/Info.plist
+      properties:
+        CFBundleURLTypes:
+          - CFBundleTypeRole: Editor
+            CFBundleURLSchemes:
+              - saveforx
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoadsForLocalNetworking: true
+        UILaunchScreen: {}
+    dependencies:
+      - target: SaveForXShare
+
+  SaveForXShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: SaveForXShare
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.saveforx.app.share
+        INFOPLIST_KEY_CFBundleDisplayName: Save for X
+    info:
+      path: SaveForXShare/Info.plist
+      properties:
+        CFBundleDisplayName: Save for X
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
