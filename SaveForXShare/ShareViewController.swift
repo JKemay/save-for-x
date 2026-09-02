@@ -72,8 +72,20 @@ final class ShareViewController: UIViewController {
 }
 
 private extension URL {
+    /// Accepts only an https link to a specific post.
+    ///
+    /// Host alone is not enough: a profile or homepage link would be accepted
+    /// here and then rejected by the resolver, which reads to the user as the
+    /// app failing rather than as the wrong link being shared. This matches the
+    /// resolver's own check so the rejection happens at share time.
     var isXPostURL: Bool {
-        guard let host = host?.lowercased() else { return false }
-        return ["x.com", "www.x.com", "twitter.com", "www.twitter.com"].contains(host)
+        guard scheme?.lowercased() == "https",
+              let host = host?.lowercased(),
+              ["x.com", "www.x.com", "twitter.com", "www.twitter.com"].contains(host) else {
+            return false
+        }
+        let parts = path.split(separator: "/", omittingEmptySubsequences: true)
+        guard parts.count >= 3, parts[1] == "status" else { return false }
+        return !parts[2].isEmpty && parts[2].allSatisfy { $0.isNumber }
     }
 }

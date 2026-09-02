@@ -6,6 +6,12 @@ const execFileAsync = promisify(execFile);
 const port = Number(process.env.PORT || 8787);
 const host = process.env.HOST || "0.0.0.0";
 const maxBodyBytes = 16 * 1024;
+// yt-dlp will sit on an unresponsive host indefinitely; without a ceiling a
+// few such requests pile up child processes that never exit.
+const resolveTimeoutMs = Number(process.env.RESOLVE_TIMEOUT_MS || 30_000);
+
+/** A client sent something malformed — distinct from the resolver failing. */
+class BadRequest extends Error {}
 
 function json(response, status, body) {
   response.writeHead(status, {
@@ -19,8 +25,12 @@ function json(response, status, body) {
 function isAllowedXURL(value) {
   try {
     const url = new URL(value);
-    return url.protocol === "https:" &&
-      ["x.com", "www.x.com", "twitter.com", "www.twitter.com"].includes(url.hostname.toLowerCase());
+    if (url.protocol !== "https:") return false;
+    if (!["x.com", "www.x.com", "twitter.com", "www.twitter.com"]
+      .includes(url.hostname.toLowerCase())) return false;
+    // Require an actual post. A bare profile or homepage URL used to pass here
+    // and then spend a full yt-dlp invocation only to fail.
+    return /^\/[^/]+\/status\/\d+/.test(url.pathname);
   } catch {
     return false;
   }
@@ -50,7 +60,7 @@ async function resolveVideo(postURL) {
     "--get-url",
     "--format", "b[ext=mp4]/b",
     postURL
-  ], { maxBuffer: 512 * 1024 });
+  ], { maxBuffer: 512 * 1024, timeout: resolveTimeoutMs, killSignal: "SIGKILL" });
 
   const downloadURL = stdout.trim().split("\n")[0];
   if (!downloadURL || !downloadURL.startsWith("https://")) {
@@ -87,15 +97,28 @@ const server = http.createServer(async (request, response) => {
   }
 
   try {
-    const body = JSON.parse(await readBody(request));
+    let body;
+    try {
+      body = JSON.parse(await readBody(request));
+    } catch {
+      throw new BadRequest("invalid_json");
+    }
+    if (body === null || typeof body !== "object") {
+      throw new BadRequest("invalid_json");
+    }
     if (!isAllowedXURL(body.url)) {
-      json(response, 400, { error: "invalid_x_url" });
-      return;
+      throw new BadRequest("invalid_x_url");
     }
 
     const result = await resolveVideo(body.url);
     json(response, 200, result);
   } catch (error) {
+    // A bad request is the caller's fault; reporting it as 502 told the phone
+    // the resolver was broken and invited a pointless retry.
+    if (error instanceof BadRequest) {
+      json(response, 400, { error: error.message });
+      return;
+    }
     console.error(error.message);
     json(response, 502, { error: "resolver_failed" });
   }

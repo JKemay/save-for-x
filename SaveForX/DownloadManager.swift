@@ -33,14 +33,25 @@ final class DownloadManager: ObservableObject {
 
             UserDefaults.standard.set(resolverEndpoint, forKey: resolverEndpointKey)
             let resolved = try await ResolverClient(endpoint: endpoint).resolve(postURL: postURL)
+
+            // The resolver endpoint is whatever the user typed in, so nothing it
+            // returns is trusted: an arbitrary scheme here would let it point at
+            // file:// or similar rather than at a video to fetch.
+            guard let downloadScheme = resolved.downloadURL.scheme?.lowercased(),
+                  downloadScheme == "https" || downloadScheme == "http" else {
+                throw SaveForXError.invalidResolverResponse
+            }
+
             statusMessage = "Downloading video…"
             let (temporaryURL, _) = try await URLSession.shared.download(from: resolved.downloadURL)
-            let filename = resolved.filename ?? "x-video.mp4"
-            let photoURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+            let photoURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent(Self.safeFilename(resolved.filename))
+            // Remove the staged copy whether or not the save succeeds; it used
+            // to be left behind on every failure.
+            defer { try? FileManager.default.removeItem(at: photoURL) }
             try? FileManager.default.removeItem(at: photoURL)
             try FileManager.default.copyItem(at: temporaryURL, to: photoURL)
             try await saveVideoToPhotos(at: photoURL)
-            try? FileManager.default.removeItem(at: photoURL)
             statusMessage = "Saved to Photos."
         } catch {
             statusMessage = error.localizedDescription
@@ -48,6 +59,25 @@ final class DownloadManager: ObservableObject {
         }
 
         isDownloading = false
+    }
+
+    /// Reduce a resolver-supplied name to a single safe path component.
+    ///
+    /// `appendingPathComponent` happily accepts "../" segments, so passing the
+    /// resolver's string straight through let it choose a path outside the
+    /// temporary directory.
+    static func safeFilename(_ proposed: String?) -> String {
+        let fallback = "x-video.mp4"
+        guard let proposed, !proposed.isEmpty else { return fallback }
+
+        // Keep only the last component, then allow a conservative character set.
+        let base = proposed.split(separator: "/").last.map(String.init) ?? ""
+        let kept = base.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == "." }
+        let cleaned = String(kept).trimmingCharacters(in: CharacterSet(charactersIn: "."))
+
+        guard !cleaned.isEmpty, cleaned.count <= 128 else { return fallback }
+        // Photos needs a video extension to import the file.
+        return cleaned.lowercased().hasSuffix(".mp4") ? cleaned : cleaned + ".mp4"
     }
 
     private func saveVideoToPhotos(at fileURL: URL) async throws {
