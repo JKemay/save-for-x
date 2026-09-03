@@ -15,8 +15,29 @@ struct SaveForXApp: App {
                         downloadManager.enqueue(postURL: post)
                     }
                 }
+                #if DEBUG
+                .task { enqueueLaunchArgumentLinks() }
+                #endif
         }
     }
+
+    #if DEBUG
+    /// Queue links passed on the command line, so the download queue can be
+    /// driven from a script without the Share Sheet:
+    ///
+    ///     xcrun simctl launch <device> com.saveforx.app -enqueueLinks "url1,url2"
+    ///
+    /// Reuses the same parsing and validation the paste field uses, and is
+    /// compiled out of release builds entirely.
+    private func enqueueLaunchArgumentLinks() {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flag = arguments.firstIndex(of: "-enqueueLinks"),
+              arguments.index(after: flag) < arguments.endIndex else {
+            return
+        }
+        downloadManager.enqueue(pastedText: arguments[arguments.index(after: flag)])
+    }
+    #endif
 }
 
 final class AppRouter: ObservableObject {

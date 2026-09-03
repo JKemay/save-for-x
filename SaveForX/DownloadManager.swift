@@ -95,6 +95,8 @@ final class DownloadManager: ObservableObject {
     private let resolverEndpointKey = "resolverEndpoint"
     private var tasks: [UUID: Task<Void, Never>] = [:]
 
+    private let downloader = ProgressiveDownloader()
+
     // Photos permission must be requested once for the whole app: several
     // shared links starting concurrently must not produce five separate
     // system prompts, so every job awaits this one cached authorization task.
@@ -330,18 +332,6 @@ final class DownloadManager: ObservableObject {
                 throw SaveForXError.invalidResolverResponse
             }
 
-            try Task.checkCancellation()
-            setState(.downloading(nil), for: id)
-            // The plain `download(from:)` reports nothing until it finishes, so
-            // progress needs a per-task delegate instead.
-            let progressDelegate = DownloadProgressDelegate { [weak self] fraction in
-                Task { @MainActor in self?.updateProgress(fraction, for: id) }
-            }
-            let (temporaryURL, _) = try await URLSession.shared.download(
-                from: resolved.downloadURL,
-                delegate: progressDelegate
-            )
-
             // Stage each job's file in its own subdirectory (named for the
             // job's id) so two concurrent downloads never collide over the
             // same staged filename.
@@ -353,7 +343,13 @@ final class DownloadManager: ObservableObject {
             // succeeds; it used to be left behind on every failure.
             defer { try? FileManager.default.removeItem(at: stagingDirectory) }
 
-            try FileManager.default.copyItem(at: temporaryURL, to: photoURL)
+            try Task.checkCancellation()
+            setState(.downloading(nil), for: id)
+            // The downloader moves the finished file straight into the staging
+            // directory, so nothing is left in URLSession's own temp location.
+            try await downloader.download(from: resolved.downloadURL, to: photoURL) { [weak self] fraction in
+                Task { @MainActor in self?.updateProgress(fraction, for: id) }
+            }
 
             try Task.checkCancellation()
             setState(.saving, for: id)
@@ -436,37 +432,124 @@ final class DownloadManager: ObservableObject {
     }
 }
 
-private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
-    private let onProgress: (Double?) -> Void
-    private var lastReportedPercent: Int = -1
+/// Downloads a file with real progress callbacks.
+///
+/// `URLSession.download(from:delegate:)` installs its own internal download
+/// delegate, so a caller-supplied one never receives `didWriteData` and every
+/// progress bar stayed indeterminate. A session whose delegate is set at
+/// creation does receive those callbacks; this bridges that back to
+/// async/await, and moves the finished file into place from inside
+/// `didFinishDownloadingTo`, where the temporary file is still guaranteed to
+/// exist.
+final class ProgressiveDownloader: NSObject, @unchecked Sendable {
+    private final class Transfer {
+        let destination: URL
+        let onProgress: (Double?) -> Void
+        var continuation: CheckedContinuation<Void, Error>?
+        var lastPercent = -1
+        var moveResult: Result<Void, Error>?
 
-    init(onProgress: @escaping (Double?) -> Void) {
-        self.onProgress = onProgress
+        init(destination: URL, onProgress: @escaping (Double?) -> Void) {
+            self.destination = destination
+            self.onProgress = onProgress
+        }
     }
 
+    private let lock = NSLock()
+    private var transfers: [Int: Transfer] = [:]
+
+    private lazy var session: URLSession = {
+        URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+    }()
+
+    func download(
+        from url: URL,
+        to destination: URL,
+        onProgress: @escaping (Double?) -> Void
+    ) async throws {
+        let task = session.downloadTask(with: url)
+        let transfer = Transfer(destination: destination, onProgress: onProgress)
+
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                transfer.continuation = continuation
+                lock.lock()
+                transfers[task.taskIdentifier] = transfer
+                lock.unlock()
+                task.resume()
+            }
+        } onCancel: {
+            task.cancel()
+        }
+    }
+
+    private func transfer(for identifier: Int) -> Transfer? {
+        lock.lock()
+        defer { lock.unlock() }
+        return transfers[identifier]
+    }
+
+    /// Resumes the waiting caller exactly once.
+    private func finish(_ identifier: Int, with result: Result<Void, Error>) {
+        lock.lock()
+        let transfer = transfers.removeValue(forKey: identifier)
+        lock.unlock()
+
+        guard let continuation = transfer?.continuation else { return }
+        continuation.resume(with: result)
+    }
+}
+
+extension ProgressiveDownloader: URLSessionDownloadDelegate {
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                     didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
                     totalBytesExpectedToWrite: Int64) {
+        guard let transfer = transfer(for: downloadTask.taskIdentifier) else { return }
+
         // Servers that send no Content-Length report -1 here; the bar stays
         // indeterminate rather than showing a bogus percentage.
         guard totalBytesExpectedToWrite > 0 else {
-            onProgress(nil)
+            transfer.onProgress(nil)
             return
         }
+
         let fraction = min(max(Double(totalBytesWritten) / Double(totalBytesExpectedToWrite), 0), 1)
         // Publish only on whole-percent changes: this fires many times a
         // second per task, and three concurrent downloads would otherwise
         // rerender the whole list constantly.
         let percent = Int((fraction * 100).rounded())
-        guard percent != lastReportedPercent else { return }
-        lastReportedPercent = percent
-        onProgress(fraction)
+        guard percent != transfer.lastPercent else { return }
+        transfer.lastPercent = percent
+        transfer.onProgress(fraction)
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                     didFinishDownloadingTo location: URL) {
-        // Required by the protocol; the async download(from:delegate:) API
-        // takes ownership of the finished file itself.
+        guard let transfer = transfer(for: downloadTask.taskIdentifier) else { return }
+
+        // This must happen synchronously: the temporary file is deleted as
+        // soon as this method returns.
+        do {
+            try? FileManager.default.removeItem(at: transfer.destination)
+            try FileManager.default.moveItem(at: location, to: transfer.destination)
+            transfer.moveResult = .success(())
+        } catch {
+            transfer.moveResult = .failure(error)
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        guard let transfer = transfer(for: task.taskIdentifier) else { return }
+
+        if let error {
+            // A cancelled transfer is reported as an ordinary URLError, but the
+            // queue distinguishes cancellation from failure.
+            let isCancelled = (error as? URLError)?.code == .cancelled
+            finish(task.taskIdentifier, with: .failure(isCancelled ? CancellationError() : error))
+            return
+        }
+
+        finish(task.taskIdentifier, with: transfer.moveResult ?? .failure(SaveForXError.invalidResolverResponse))
     }
 }
 

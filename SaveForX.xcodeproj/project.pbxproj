@@ -258,12 +258,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = SaveForX/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Save for X";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Save for X uses your local network when you connect it to a resolver running on your Mac.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Save for X does not use the microphone.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Save for X needs permission to save downloaded videos to your Photos library.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Save for X uses Photos to save downloaded videos.";
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -296,12 +290,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = SaveForX/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Save for X";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Save for X uses your local network when you connect it to a resolver running on your Mac.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Save for X does not use the microphone.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Save for X needs permission to save downloaded videos to your Photos library.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Save for X uses Photos to save downloaded videos.";
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
