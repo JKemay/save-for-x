@@ -865,6 +865,15 @@ struct ResolvedVideo: Decodable {
     }
 }
 
+/// The resolver's structured error body, e.g. `{"error":"no_video","message":"…"}`.
+/// `message` is optional because a non-2xx response that isn't from this
+/// resolver at all (a misconfigured endpoint, an intervening proxy) may not
+/// have one, or may fail to decode as this shape at all.
+private struct ResolverErrorBody: Decodable {
+    let error: String?
+    let message: String?
+}
+
 struct ResolverClient {
     let endpoint: URL
 
@@ -877,7 +886,20 @@ struct ResolverClient {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
               (200..<300).contains(httpResponse.statusCode) else {
-            throw SaveForXError.resolverUnavailable
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+            // The resolver endpoint is whatever the user typed into the app, so
+            // its response — including this error body — is untrusted input
+            // that ends up on screen. If it decodes to a usable message, sanitize
+            // that message (see `sanitizeUntrustedResolverMessage`) before it's
+            // ever surfaced; otherwise fall back to a message we control.
+            if let body = try? JSONDecoder().decode(ResolverErrorBody.self, from: data),
+               let sanitized = Self.sanitizeUntrustedResolverMessage(body.message), !sanitized.isEmpty {
+                throw SaveForXError.resolverRejected(sanitized)
+            }
+            if (500..<600).contains(statusCode) {
+                throw SaveForXError.resolverUnavailable
+            }
+            throw SaveForXError.invalidResolverResponse
         }
 
         do {
@@ -886,12 +908,37 @@ struct ResolverClient {
             throw SaveForXError.invalidResolverResponse
         }
     }
+
+    /// The resolver endpoint is user-supplied, so nothing it sends back —
+    /// including this error message — is trusted, and it's about to be shown
+    /// directly in a job row. Strip control characters/newlines (which could
+    /// otherwise be used to inject line breaks or terminal-style tricks into
+    /// the UI), collapse repeated whitespace, and cap the length rather than
+    /// rejecting an overlong message outright.
+    private static func sanitizeUntrustedResolverMessage(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+
+        let withoutControlCharacters = raw.unicodeScalars
+            .filter { !CharacterSet.controlCharacters.contains($0) }
+            .map(Character.init)
+        let collapsed = String(withoutControlCharacters)
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+
+        let maxLength = 120
+        if collapsed.count > maxLength {
+            return String(collapsed.prefix(maxLength))
+        }
+        return collapsed
+    }
 }
 
 enum SaveForXError: LocalizedError {
     case photoPermissionDenied
     case invalidResolverEndpoint
     case resolverUnavailable
+    case resolverRejected(String)
     case invalidResolverResponse
     case downloadInterrupted
 
@@ -903,6 +950,8 @@ enum SaveForXError: LocalizedError {
             return "Enter a valid resolver URL in the app."
         case .resolverUnavailable:
             return "The video resolver is unavailable right now."
+        case .resolverRejected(let message):
+            return message
         case .invalidResolverResponse:
             return "The resolver returned an invalid response."
         case .downloadInterrupted:
