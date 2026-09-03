@@ -19,6 +19,14 @@ struct SaveForXApp: App {
                 .task { enqueueLaunchArgumentLinks() }
                 #endif
         }
+        // Lets the system relaunch (or wake) the app to service the
+        // background download session: the closure just awaits pending
+        // session events (see DownloadManager.awaitBackgroundSessionEvents)
+        // and returning ends the background task, letting iOS suspend the
+        // app again.
+        .backgroundTask(.urlSession(BackgroundDownloader.sessionIdentifier)) {
+            await downloadManager.awaitBackgroundSessionEvents()
+        }
     }
 
     #if DEBUG

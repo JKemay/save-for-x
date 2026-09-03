@@ -1,7 +1,11 @@
 import Foundation
 import Photos
 
-enum DownloadState: Equatable {
+/// Codable is synthesized automatically for this enum (SE-0295 lets an enum
+/// with associated values conform to Codable as long as every associated
+/// value is Codable too), so the persisted queue can round-trip a job's
+/// state without any hand-written encode/decode here.
+enum DownloadState: Equatable, Codable {
     case idle            // enqueued, not started by the user yet
     case waiting         // user started it, waiting for a concurrency slot
     case resolving
@@ -64,10 +68,17 @@ enum DownloadState: Equatable {
     }
 }
 
-struct DownloadJob: Identifiable, Equatable {
+struct DownloadJob: Identifiable, Equatable, Codable {
     let id: UUID
     let postURL: URL
     var state: DownloadState
+    /// Where the resolved video is staged, once resolving succeeds. Nil
+    /// until then. Persisted (unlike the old in-memory-only staging path)
+    /// so a relaunched app can find — or look for — the file without
+    /// re-resolving, and so the background downloader's delegate can move
+    /// the finished transfer into place even if it runs before the rest of
+    /// this job's in-memory state exists.
+    var destination: URL?
 }
 
 struct BatchEnqueueResult {
@@ -85,6 +96,25 @@ struct BatchEnqueueResult {
     }
 }
 
+/// Where everything that must outlive app termination lives: the system may
+/// purge `temporaryDirectory` while the app isn't running (and a background
+/// transfer can easily outlast that), but Application Support is preserved
+/// across launches, so staged files and the persisted queue both go here.
+private enum PersistentStorage {
+    static let root: URL = {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let directory = base.appendingPathComponent("SaveForX", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }()
+
+    /// Per-job staging subdirectories live under here, named for the job's
+    /// id, so concurrent jobs never collide over the same staged filename.
+    static let stagingRoot = root.appendingPathComponent("staging", isDirectory: true)
+    static let queueFile = root.appendingPathComponent("queue.json")
+    static let destinationsFile = root.appendingPathComponent("downloader-destinations.json")
+}
+
 @MainActor
 final class DownloadManager: ObservableObject {
     @Published private(set) var jobs: [DownloadJob] = []
@@ -95,7 +125,7 @@ final class DownloadManager: ObservableObject {
     private let resolverEndpointKey = "resolverEndpoint"
     private var tasks: [UUID: Task<Void, Never>] = [:]
 
-    private let downloader = ProgressiveDownloader()
+    private let downloader = BackgroundDownloader()
 
     // Photos permission must be requested once for the whole app: several
     // shared links starting concurrently must not produce five separate
@@ -105,6 +135,22 @@ final class DownloadManager: ObservableObject {
     init() {
         resolverEndpoint = UserDefaults.standard.string(forKey: resolverEndpointKey)
             ?? "https://resolver.saveforx.example/v1/resolve"
+        jobs = Self.loadPersistedJobs()
+
+        downloader.events = self
+        // Instantiate the background session now rather than lazily on the
+        // first download: if the system relaunched this process to service
+        // background-transfer events, the session's delegate has to exist
+        // immediately to receive them.
+        downloader.activate()
+
+        // Reconcile the persisted queue against reality (still-running
+        // transfers, files that finished staging with nothing left to
+        // receive them, genuinely interrupted jobs) once the session can
+        // report its outstanding tasks.
+        Task { @MainActor [weak self] in
+            await self?.reconcileAfterLaunch()
+        }
     }
 
     var activeCount: Int {
@@ -180,8 +226,9 @@ final class DownloadManager: ObservableObject {
         }
         guard !isDuplicate else { return false }
 
-        let job = DownloadJob(id: UUID(), postURL: canonicalURL, state: .idle)
+        let job = DownloadJob(id: UUID(), postURL: canonicalURL, state: .idle, destination: nil)
         jobs.append(job)
+        saveQueue()
         start(job.id)
         return true
     }
@@ -255,7 +302,7 @@ final class DownloadManager: ObservableObject {
     func start(_ id: UUID) {
         guard let index = jobs.firstIndex(where: { $0.id == id }),
               isStartable(jobs[index].state) else { return }
-        jobs[index].state = .waiting
+        setState(.waiting, for: id)
         pump()
     }
 
@@ -267,11 +314,15 @@ final class DownloadManager: ObservableObject {
 
     func cancel(_ id: UUID) {
         tasks[id]?.cancel()
+        // Also cancels the URLSession task, if any: once a job has reached
+        // `.downloading`, `perform(_:)` has already returned, so cancelling
+        // the resolver-phase `Task` above no longer has anything to stop.
+        downloader.cancel(jobID: id)
 
         if let index = jobs.firstIndex(where: { $0.id == id }) {
             switch jobs[index].state {
             case .idle, .waiting:
-                jobs[index].state = .cancelled
+                setState(.cancelled, for: id)
             default:
                 break
             }
@@ -283,10 +334,12 @@ final class DownloadManager: ObservableObject {
         cancel(id)
         tasks[id] = nil
         jobs.removeAll { $0.id == id }
+        saveQueue()
     }
 
     func clearCompleted() {
         jobs.removeAll { isTerminal($0.state) }
+        saveQueue()
     }
 
     private func pump() {
@@ -297,8 +350,8 @@ final class DownloadManager: ObservableObject {
     }
 
     private func run(_ id: UUID) {
-        guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
-        jobs[index].state = .resolving
+        guard jobs.contains(where: { $0.id == id }) else { return }
+        setState(.resolving, for: id)
         tasks[id] = Task { [weak self] in
             await self?.perform(id)
         }
@@ -312,6 +365,13 @@ final class DownloadManager: ObservableObject {
 
         guard let job = jobs.first(where: { $0.id == id }) else { return }
         let postURL = job.postURL
+
+        // Tracks whether this attempt created a staging directory, so a
+        // failure here (before the transfer is handed off) can clean it up;
+        // once the download is handed to `downloader`, the directory must
+        // survive this function returning; it's removed later by whichever
+        // of `downloadFinished`/`downloadFailed`/reconciliation ends the job.
+        var createdStagingDirectory: URL?
 
         do {
             guard let endpoint = URL(string: resolverEndpoint),
@@ -334,30 +394,29 @@ final class DownloadManager: ObservableObject {
 
             // Stage each job's file in its own subdirectory (named for the
             // job's id) so two concurrent downloads never collide over the
-            // same staged filename.
-            let stagingDirectory = FileManager.default.temporaryDirectory
-                .appendingPathComponent(id.uuidString, isDirectory: true)
+            // same staged filename. This now lives under Application Support
+            // rather than `temporaryDirectory`: the system can purge tmp
+            // while the app isn't running, and a background transfer must
+            // leave a file that's still there whenever the app next runs.
+            let stagingDirectory = PersistentStorage.stagingRoot.appendingPathComponent(id.uuidString, isDirectory: true)
             try FileManager.default.createDirectory(at: stagingDirectory, withIntermediateDirectories: true)
+            createdStagingDirectory = stagingDirectory
             let photoURL = stagingDirectory.appendingPathComponent(Self.safeFilename(resolved.filename))
-            // Remove the whole staged directory whether or not the save
-            // succeeds; it used to be left behind on every failure.
-            defer { try? FileManager.default.removeItem(at: stagingDirectory) }
 
             try Task.checkCancellation()
-            setState(.downloading(nil), for: id)
-            // The downloader moves the finished file straight into the staging
-            // directory, so nothing is left in URLSession's own temp location.
-            try await downloader.download(from: resolved.downloadURL, to: photoURL) { [weak self] fraction in
-                Task { @MainActor in self?.updateProgress(fraction, for: id) }
-            }
-
-            try Task.checkCancellation()
-            setState(.saving, for: id)
-            try await saveVideoToPhotos(at: photoURL)
-            setState(.finished, for: id)
+            // Hand the transfer to the background session and return without
+            // awaiting it: the bytes now move on a system daemon, so this
+            // job stays `.downloading(nil)` and progress/completion arrive
+            // later through `BackgroundDownloaderDelegate`, which is what
+            // lets the transfer survive the app being suspended or even
+            // terminated.
+            beginDownloading(id, destination: photoURL)
+            downloader.start(jobID: id, from: resolved.downloadURL, to: photoURL)
         } catch is CancellationError {
+            if let createdStagingDirectory { try? FileManager.default.removeItem(at: createdStagingDirectory) }
             setState(.cancelled, for: id)
         } catch {
+            if let createdStagingDirectory { try? FileManager.default.removeItem(at: createdStagingDirectory) }
             if Task.isCancelled {
                 setState(.cancelled, for: id)
             } else {
@@ -366,9 +425,19 @@ final class DownloadManager: ObservableObject {
         }
     }
 
+    /// Records the staged destination and moves the job into `.downloading`
+    /// in one write, so `saveQueue()` only fires once for the transition.
+    private func beginDownloading(_ id: UUID, destination: URL) {
+        guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
+        jobs[index].destination = destination
+        jobs[index].state = .downloading(nil)
+        saveQueue()
+    }
+
     private func setState(_ state: DownloadState, for id: UUID) {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
         jobs[index].state = state
+        saveQueue()
     }
 
     /// Only writes while the job is still `.downloading`: a late progress
@@ -383,6 +452,74 @@ final class DownloadManager: ObservableObject {
         // land after a newer one; ignore anything that walks the bar backwards.
         if let fraction, let current, fraction < current { return }
         jobs[index].state = .downloading(fraction)
+        saveQueue()
+    }
+
+    /// Removes a job's staging subdirectory (see `PersistentStorage`) once
+    /// it's been saved or has failed; the old behavior of never leaving
+    /// staged files behind, now against Application Support instead of tmp.
+    private func cleanupStaging(for id: UUID) {
+        let directory = PersistentStorage.stagingRoot.appendingPathComponent(id.uuidString, isDirectory: true)
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    /// Shared by the normal `downloadFinished` path and launch reconciliation:
+    /// saves the staged file to Photos, resolves the job to `.finished` or
+    /// `.failed`, cleans up its staging directory either way, and frees the
+    /// concurrency slot.
+    private func finishSaving(_ id: UUID, at fileURL: URL) async {
+        do {
+            try await saveVideoToPhotos(at: fileURL)
+            setState(.finished, for: id)
+        } catch {
+            setState(.failed(error.localizedDescription), for: id)
+        }
+        cleanupStaging(for: id)
+        pump()
+    }
+
+    /// Reconciles the persisted queue against reality after a fresh launch —
+    /// a normal cold start, or a relaunch the system triggered to service
+    /// the background session:
+    /// - a job that was `.resolving`/`.downloading` with a matching task
+    ///   still running is put back to `.downloading(nil)`; progress resumes
+    ///   via callbacks.
+    /// - a job that was `.downloading` with no task but a staged file
+    ///   already at its destination is moved to `.saving` and finished.
+    /// - a job that was `.resolving`/`.downloading` with neither a task nor
+    ///   a file was genuinely interrupted (e.g. the process was killed
+    ///   outright) and is marked `.failed` so the retry button offers it.
+    /// - `.saving` re-attempts the Photos save if the file is present, else
+    ///   the same failure.
+    /// - `.waiting`/`.idle` jobs are left as-is for `pump()` to pick up.
+    private func reconcileAfterLaunch() async {
+        let runningIDs = await downloader.runningJobIDs()
+
+        for job in jobs {
+            switch job.state {
+            case .resolving, .downloading:
+                if runningIDs.contains(job.id) {
+                    setState(.downloading(nil), for: job.id)
+                } else if let destination = job.destination,
+                          FileManager.default.fileExists(atPath: destination.path) {
+                    setState(.saving, for: job.id)
+                    Task { [weak self] in await self?.finishSaving(job.id, at: destination) }
+                } else {
+                    setState(.failed(SaveForXError.downloadInterrupted.localizedDescription), for: job.id)
+                }
+            case .saving:
+                if let destination = job.destination,
+                   FileManager.default.fileExists(atPath: destination.path) {
+                    Task { [weak self] in await self?.finishSaving(job.id, at: destination) }
+                } else {
+                    setState(.failed(SaveForXError.downloadInterrupted.localizedDescription), for: job.id)
+                }
+            case .waiting, .idle, .finished, .failed, .cancelled:
+                continue
+            }
+        }
+
+        pump()
     }
 
     /// Reduce a resolver-supplied name to a single safe path component.
@@ -430,86 +567,214 @@ final class DownloadManager: ObservableObject {
         photoAuthorizationTask = task
         return await task.value
     }
-}
 
-/// Downloads a file with real progress callbacks.
-///
-/// `URLSession.download(from:delegate:)` installs its own internal download
-/// delegate, so a caller-supplied one never receives `didWriteData` and every
-/// progress bar stayed indeterminate. A session whose delegate is set at
-/// creation does receive those callbacks; this bridges that back to
-/// async/await, and moves the finished file into place from inside
-/// `didFinishDownloadingTo`, where the temporary file is still guaranteed to
-/// exist.
-final class ProgressiveDownloader: NSObject, @unchecked Sendable {
-    private final class Transfer {
-        let destination: URL
-        let onProgress: (Double?) -> Void
-        var continuation: CheckedContinuation<Void, Error>?
-        var lastPercent = -1
-        var moveResult: Result<Void, Error>?
-
-        init(destination: URL, onProgress: @escaping (Double?) -> Void) {
-            self.destination = destination
-            self.onProgress = onProgress
+    /// Bridges to SwiftUI's `.backgroundTask(.urlSession(...))`: awaits the
+    /// background session's finish-events callback so the app is kept alive
+    /// long enough for pending transfer events to be delivered, then lets
+    /// the scene modifier return and the system suspend the app again.
+    func awaitBackgroundSessionEvents() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            downloader.awaitFinishedEvents { continuation.resume() }
         }
     }
 
+    private func saveQueue() {
+        guard let data = try? JSONEncoder().encode(jobs) else { return }
+        try? data.write(to: PersistentStorage.queueFile, options: .atomic)
+    }
+
+    private static func loadPersistedJobs() -> [DownloadJob] {
+        guard let data = try? Data(contentsOf: PersistentStorage.queueFile) else { return [] }
+        return (try? JSONDecoder().decode([DownloadJob].self, from: data)) ?? []
+    }
+}
+
+extension DownloadManager: BackgroundDownloaderDelegate {
+    func downloadProgressed(jobID: UUID, fraction: Double?) {
+        updateProgress(fraction, for: jobID)
+    }
+
+    /// The file is already at its destination by the time this fires (see
+    /// `BackgroundDownloader.urlSession(_:downloadTask:didFinishDownloadingTo:)`).
+    func downloadFinished(jobID: UUID) {
+        guard let job = jobs.first(where: { $0.id == jobID }), let destination = job.destination else {
+            pump()
+            return
+        }
+        setState(.saving, for: jobID)
+        Task { [weak self] in
+            await self?.finishSaving(jobID, at: destination)
+        }
+    }
+
+    func downloadFailed(jobID: UUID, error: Error, cancelled: Bool) {
+        setState(cancelled ? .cancelled : .failed(error.localizedDescription), for: jobID)
+        cleanupStaging(for: jobID)
+        pump()
+    }
+}
+
+/// Events a `BackgroundDownloader` reports back to whoever owns its jobs.
+/// Marked `@MainActor` so every requirement is main-actor-isolated: the
+/// downloader's delegate callbacks arrive on a background queue and must
+/// hop over before calling any of these, and `DownloadManager` — already a
+/// main-actor type — can then conform without any extra isolation dance.
+@MainActor
+protocol BackgroundDownloaderDelegate: AnyObject {
+    func downloadProgressed(jobID: UUID, fraction: Double?)
+    /// The file is already at its destination when this fires.
+    func downloadFinished(jobID: UUID)
+    func downloadFailed(jobID: UUID, error: Error, cancelled: Bool)
+}
+
+/// Downloads files through a background `URLSession` so transfers keep
+/// moving while the app is suspended, and — per Apple's background-transfer
+/// design — even survive the app being terminated by the system; a relaunch
+/// simply reconnects to the same session rather than starting a new one.
+///
+/// Unlike the old `ProgressiveDownloader`, this can't bridge the transfer to
+/// a single `async` call: a `CheckedContinuation` lives only as long as the
+/// process that created it, and the whole point here is to outlive that
+/// process. So `start` fires the task and returns immediately, and results
+/// arrive later through `events`, which may be a delegate object in an
+/// entirely new process from the one that called `start`.
+final class BackgroundDownloader: NSObject, @unchecked Sendable {
+    /// com.saveforx.app.downloads — the background session's identifier.
+    /// Shared as a constant (rather than a string literal in two places) so
+    /// the session's own config and the app's `.backgroundTask(.urlSession(...))`
+    /// registration can't drift apart.
+    static let sessionIdentifier = "com.saveforx.app.downloads"
+
+    /// Every call hops to the main actor before touching this, since
+    /// delegate callbacks below arrive on the session's own background
+    /// delegate queue and `events` is main-actor-isolated state.
+    weak var events: BackgroundDownloaderDelegate?
+
+    // `destinations`, `lastPercent`, `moveErrors`, and `backgroundCompletionHandler`
+    // are all touched both from callers on the main actor (`start`,
+    // `awaitFinishedEvents`) and from delegate callbacks on the session's
+    // own background queue, so every access goes through this lock.
     private let lock = NSLock()
-    private var transfers: [Int: Transfer] = [:]
+
+    // Job -> staged destination, persisted to disk. `didFinishDownloadingTo`
+    // must move the file synchronously before it returns — the system
+    // deletes the temporary file as soon as that method does — and it may
+    // run in a freshly relaunched process where none of DownloadManager's
+    // in-memory job state exists yet, so this can't be an in-memory-only
+    // dictionary the way the old transfer bookkeeping was.
+    private var destinations: [String: URL]
+
+    // Progress throttle state, keyed by job id rather than task identifier:
+    // task identifiers aren't stable across a relaunch, but the job id
+    // (stored in `taskDescription`) is.
+    private var lastPercent: [String: Int] = [:]
+
+    // A move failure inside `didFinishDownloadingTo` has to be remembered
+    // and reported once `didCompleteWithError` fires right after it — the
+    // same problem the old `Transfer.moveResult` solved.
+    private var moveErrors: [String: Error] = [:]
+
+    private var backgroundCompletionHandler: (() -> Void)?
 
     private lazy var session: URLSession = {
-        URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+        let config = URLSessionConfiguration.background(withIdentifier: Self.sessionIdentifier)
+        config.sessionSendsLaunchEvents = true
+        config.isDiscretionary = false
+        return URLSession(configuration: config, delegate: self, delegateQueue: nil)
     }()
 
-    func download(
-        from url: URL,
-        to destination: URL,
-        onProgress: @escaping (Double?) -> Void
-    ) async throws {
-        let task = session.downloadTask(with: url)
-        let transfer = Transfer(destination: destination, onProgress: onProgress)
+    override init() {
+        destinations = Self.loadDestinations()
+        super.init()
+    }
 
-        try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                transfer.continuation = continuation
-                lock.lock()
-                transfers[task.taskIdentifier] = transfer
-                lock.unlock()
-                task.resume()
-            }
-        } onCancel: {
-            task.cancel()
+    /// Forces the background session — and so its delegate — to exist. Must
+    /// be called during app launch rather than left to lazy creation on the
+    /// first download: when the system relaunches the app to service
+    /// pending background-transfer events, the delegate has to already be
+    /// in place to receive them.
+    func activate() {
+        _ = session
+    }
+
+    func start(jobID: UUID, from url: URL, to destination: URL) {
+        setDestination(destination, for: jobID)
+        let task = session.downloadTask(with: url)
+        // How a relaunched app re-associates a system task with its job.
+        task.taskDescription = jobID.uuidString
+        task.resume()
+    }
+
+    func cancel(jobID: UUID) {
+        Task {
+            let tasks = await session.allTasks
+            tasks.first { $0.taskDescription == jobID.uuidString }?.cancel()
         }
     }
 
-    private func transfer(for identifier: Int) -> Transfer? {
-        lock.lock()
-        defer { lock.unlock() }
-        return transfers[identifier]
+    func runningJobIDs() async -> Set<UUID> {
+        let tasks = await session.allTasks
+        return Set(tasks.compactMap { $0.taskDescription.flatMap(UUID.init) })
     }
 
-    /// Resumes the waiting caller exactly once.
-    private func finish(_ identifier: Int, with result: Result<Void, Error>) {
+    /// Stashes the handler `urlSessionDidFinishEvents` should call. Used to
+    /// bridge into SwiftUI's `.backgroundTask(.urlSession(...))`, whose
+    /// closure is expected to keep awaiting until pending session events
+    /// have actually been delivered.
+    func awaitFinishedEvents(_ handler: @escaping () -> Void) {
         lock.lock()
-        let transfer = transfers.removeValue(forKey: identifier)
+        backgroundCompletionHandler = handler
         lock.unlock()
+    }
 
-        guard let continuation = transfer?.continuation else { return }
-        continuation.resume(with: result)
+    private func setDestination(_ url: URL, for jobID: UUID) {
+        lock.lock()
+        destinations[jobID.uuidString] = url
+        let snapshot = destinations
+        lock.unlock()
+        Self.persistDestinations(snapshot)
+    }
+
+    private func destination(for jobID: UUID) -> URL? {
+        lock.lock()
+        defer { lock.unlock() }
+        return destinations[jobID.uuidString]
+    }
+
+    private func clearDestination(for jobID: UUID) {
+        lock.lock()
+        destinations[jobID.uuidString] = nil
+        let snapshot = destinations
+        lock.unlock()
+        Self.persistDestinations(snapshot)
+    }
+
+    private static func loadDestinations() -> [String: URL] {
+        guard let data = try? Data(contentsOf: PersistentStorage.destinationsFile) else { return [:] }
+        return (try? JSONDecoder().decode([String: URL].self, from: data)) ?? [:]
+    }
+
+    private static func persistDestinations(_ destinations: [String: URL]) {
+        guard let data = try? JSONEncoder().encode(destinations) else { return }
+        try? data.write(to: PersistentStorage.destinationsFile, options: .atomic)
+    }
+
+    private func jobID(for task: URLSessionTask) -> UUID? {
+        task.taskDescription.flatMap(UUID.init)
     }
 }
 
-extension ProgressiveDownloader: URLSessionDownloadDelegate {
+extension BackgroundDownloader: URLSessionDownloadDelegate {
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                     didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
                     totalBytesExpectedToWrite: Int64) {
-        guard let transfer = transfer(for: downloadTask.taskIdentifier) else { return }
+        guard let jobID = jobID(for: downloadTask) else { return }
 
         // Servers that send no Content-Length report -1 here; the bar stays
         // indeterminate rather than showing a bogus percentage.
         guard totalBytesExpectedToWrite > 0 else {
-            transfer.onProgress(nil)
+            let delegate = events
+            Task { @MainActor in delegate?.downloadProgressed(jobID: jobID, fraction: nil) }
             return
         }
 
@@ -518,38 +783,75 @@ extension ProgressiveDownloader: URLSessionDownloadDelegate {
         // second per task, and three concurrent downloads would otherwise
         // rerender the whole list constantly.
         let percent = Int((fraction * 100).rounded())
-        guard percent != transfer.lastPercent else { return }
-        transfer.lastPercent = percent
-        transfer.onProgress(fraction)
+        lock.lock()
+        let unchanged = lastPercent[jobID.uuidString] == percent
+        if !unchanged { lastPercent[jobID.uuidString] = percent }
+        lock.unlock()
+        guard !unchanged else { return }
+
+        let delegate = events
+        Task { @MainActor in delegate?.downloadProgressed(jobID: jobID, fraction: fraction) }
     }
 
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                     didFinishDownloadingTo location: URL) {
-        guard let transfer = transfer(for: downloadTask.taskIdentifier) else { return }
+        guard let jobID = jobID(for: downloadTask), let destinationURL = destination(for: jobID) else { return }
 
         // This must happen synchronously: the temporary file is deleted as
-        // soon as this method returns.
+        // soon as this method returns. It may also run in a process the
+        // system just relaunched to service this session, with none of
+        // DownloadManager's in-memory job state around — hence resolving
+        // the destination from the on-disk map above, not an in-memory one.
         do {
-            try? FileManager.default.removeItem(at: transfer.destination)
-            try FileManager.default.moveItem(at: location, to: transfer.destination)
-            transfer.moveResult = .success(())
+            try? FileManager.default.removeItem(at: destinationURL)
+            try FileManager.default.moveItem(at: location, to: destinationURL)
         } catch {
-            transfer.moveResult = .failure(error)
+            lock.lock()
+            moveErrors[jobID.uuidString] = error
+            lock.unlock()
         }
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard let transfer = transfer(for: task.taskIdentifier) else { return }
+        guard let jobID = jobID(for: task) else { return }
 
+        lock.lock()
+        let moveError = moveErrors.removeValue(forKey: jobID.uuidString)
+        lastPercent[jobID.uuidString] = nil
+        lock.unlock()
+        clearDestination(for: jobID)
+
+        let delegate = events
         if let error {
             // A cancelled transfer is reported as an ordinary URLError, but the
             // queue distinguishes cancellation from failure.
             let isCancelled = (error as? URLError)?.code == .cancelled
-            finish(task.taskIdentifier, with: .failure(isCancelled ? CancellationError() : error))
+            Task { @MainActor in delegate?.downloadFailed(jobID: jobID, error: error, cancelled: isCancelled) }
             return
         }
 
-        finish(task.taskIdentifier, with: transfer.moveResult ?? .failure(SaveForXError.invalidResolverResponse))
+        if let moveError {
+            Task { @MainActor in delegate?.downloadFailed(jobID: jobID, error: moveError, cancelled: false) }
+            return
+        }
+
+        Task { @MainActor in delegate?.downloadFinished(jobID: jobID) }
+    }
+}
+
+extension BackgroundDownloader: URLSessionDelegate {
+    /// Fired once every event for this background session that was pending
+    /// has been delivered to the delegate methods above — including, after
+    /// a relaunch, ones that happened while the app wasn't running at all.
+    func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+        lock.lock()
+        let handler = backgroundCompletionHandler
+        backgroundCompletionHandler = nil
+        lock.unlock()
+
+        DispatchQueue.main.async {
+            handler?()
+        }
     }
 }
 
@@ -591,6 +893,7 @@ enum SaveForXError: LocalizedError {
     case invalidResolverEndpoint
     case resolverUnavailable
     case invalidResolverResponse
+    case downloadInterrupted
 
     var errorDescription: String? {
         switch self {
@@ -602,6 +905,8 @@ enum SaveForXError: LocalizedError {
             return "The video resolver is unavailable right now."
         case .invalidResolverResponse:
             return "The resolver returned an invalid response."
+        case .downloadInterrupted:
+            return "Download was interrupted."
         }
     }
 }
