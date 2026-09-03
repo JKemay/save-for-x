@@ -10,6 +10,9 @@ settings:
   base:
     SWIFT_VERSION: 5.0
     TARGETED_DEVICE_FAMILY: "1,2"
+    # Kept here so `xcodegen generate` preserves device signing; regenerating
+    # without it strips the team from the project and device builds fail.
+    DEVELOPMENT_TEAM: HJ7M4JPHB3
 
 targets:
   SaveForX:
