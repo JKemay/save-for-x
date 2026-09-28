@@ -29,7 +29,7 @@ For a local iPhoneOS build, use a workspace-local derived-data directory:
 
 ```sh
 xcodegen generate
-xcodebuild -project SaveForX.xcodeproj -scheme SaveForX -sdk iphoneos -configuration Debug -derivedDataPath .derivedData CODE_SIGNING_ALLOWED=NO build
+xcodebuild -project SaveForX.xcodeproj -scheme SaveForX -destination 'generic/platform=iOS' -configuration Debug -derivedDataPath .derivedData CODE_SIGNING_ALLOWED=NO build
 ```
 
 For resolver syntax validation:

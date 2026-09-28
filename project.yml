@@ -10,6 +10,9 @@ settings:
   base:
     SWIFT_VERSION: 5.0
     TARGETED_DEVICE_FAMILY: "1,2"
+    # Kept here so `xcodegen generate` preserves device signing; regenerating
+    # without it strips the team from the project and device builds fail.
+    DEVELOPMENT_TEAM: HJ7M4JPHB3
 
 targets:
   SaveForX:
@@ -20,24 +23,28 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.saveforx.app
-        INFOPLIST_KEY_CFBundleDisplayName: Save for X
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: Save for X does not use the microphone.
-        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: Save for X needs permission to save downloaded videos to your Photos library.
-        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: Save for X uses Photos to save downloaded videos.
-        INFOPLIST_KEY_NSLocalNetworkUsageDescription: Save for X uses your local network when you connect it to a resolver running on your Mac.
-        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: true
       configs:
         Debug:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
     info:
       path: SaveForX/Info.plist
       properties:
+        # These must live here, not in INFOPLIST_KEY_* build settings: the
+        # target ships an explicit Info.plist, so those settings are ignored
+        # and the app crashed on its first Photos access without them.
+        CFBundleDisplayName: Save for X
         CFBundleURLTypes:
           - CFBundleTypeRole: Editor
             CFBundleURLSchemes:
               - saveforx
+        NSPhotoLibraryAddUsageDescription: Save for X needs permission to save downloaded videos to your Photos library.
+        NSLocalNetworkUsageDescription: Save for X uses your local network when you connect it to a resolver running on your Mac.
+        # NSAllowsLocalNetworking is the real key; the previous
+        # NSAllowsArbitraryLoadsForLocalNetworking does not exist, so ATS
+        # would block a plain-http resolver on the LAN.
         NSAppTransportSecurity:
-          NSAllowsArbitraryLoadsForLocalNetworking: true
+          NSAllowsLocalNetworking: true
+        UIApplicationSupportsIndirectInputEvents: true
         UILaunchScreen: {}
     dependencies:
       - target: SaveForXShare
